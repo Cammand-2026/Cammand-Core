@@ -1,0 +1,29 @@
+# 환경 설정 (실제값 포함)
+.env
+
+# 모델 파일 (Model 레포에서 별도 관리)
+models/*.hef
+models/*.tflite
+models/*.onnx
+models/*.pt
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# 가상환경
+Cammand/
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# 테스트 캐시
+.pytest_cache/
+.coverage

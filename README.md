@@ -96,17 +96,66 @@ MediaPipe Hands ── Skeleton (21 landmarks)
 
 ---
 
+## Project Structure
+
+```
+src/cammand/
+├── config.py          # 설정 (.env 기반, pydantic-settings)
+├── devices.py         # 기기 정의 (DeviceConfig dataclass)
+├── feedback.py        # 피드백 텍스트 생성 함수
+├── main.py            # asyncio 진입점
+├── engine/            # 추론 엔진 추상화 레이어
+│   ├── base.py        # GestureEngine ABC
+│   ├── mediapipe_engine.py  # CPU 구현체 (현재)
+│   └── hailo_engine.py      # Hailo-8L NPU 구현체 (예정)
+├── gesture/           # 순수 제스처 인식 로직
+│   ├── recognizer.py
+│   └── trajectory.py
+├── state/             # 상태 머신
+│   ├── phase.py
+│   └── machine.py
+└── io/                # 외부 I/O 어댑터
+    ├── camera.py
+    ├── mqtt_client.py
+    └── stream_server.py
+```
+
+> AI 모델 파일(.hef)은 별도 [cammand-models](https://github.com/Cammand-2026/cammand-models) 레포에서 관리됩니다.  
+> 현재는 `GESTURE_ENGINE=mediapipe` (CPU) 설정을 사용합니다.
+
+---
+
 ## Installation
 
 ```bash
-# 의존성 설치
-pip install mediapipe opencv-python paho-mqtt flask picamera2
+# 1. 가상환경 생성 (system-site-packages 필수: Picamera2 의존)
+python3 -m venv .venv --system-site-packages
+source .venv/bin/activate
 
-# 실행
-python cammand_mvp_v2.py
+# 2. 패키지 설치
+pip install -e ".[dev]"
+
+# 3. 환경변수 설정
+cp .env.example .env
+# .env 파일에서 MQTT_BROKER 등 필요한 값 수정
+
+# 4. 실행
+cammand
 ```
 
 스트리밍 주소: `http://<raspberry-pi-ip>:8080/stream`
+
+---
+
+## Testing
+
+```bash
+# 단위 테스트 (하드웨어 불필요 — CI 환경에서 실행 가능)
+pytest tests/unit/ -v
+
+# 통합 테스트 (라즈베리파이 + MQTT 브로커 필요)
+pytest tests/integration/ -v -m integration
+```
 
 ---
 
