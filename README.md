@@ -120,7 +120,7 @@ src/cammand/
     └── stream_server.py
 ```
 
-> AI 모델 파일(.hef)은 별도 [cammand-models](https://github.com/Cammand-2026/cammand-models) 레포에서 관리됩니다.  
+> AI 모델 파일(.hef)은 별도 [cammand-models](https://github.com/Cammand-2026/Cammand-Model) 레포에서 관리됩니다.  
 > 현재는 `GESTURE_ENGINE=mediapipe` (CPU) 설정을 사용합니다.
 
 ---
