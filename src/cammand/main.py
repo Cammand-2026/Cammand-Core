@@ -33,20 +33,24 @@ async def _main_loop(
     engine: GestureEngine,
     machine: StateMachine,
     streamer: MjpegServer,
+    mqtt: MqttPublisher,
 ) -> None:
     last_process = 0.0
     while True:
         # blocking I/O → thread pool 위임 (asyncio 이벤트 루프 블록 방지)
         frame = await asyncio.to_thread(camera.read)
-        streamer.push(frame)
 
         now = time.monotonic()
         if now - last_process < settings.process_interval_sec:
+            streamer.push(frame)  # 스로틀 구간: raw frame 스트리밍 유지
             await asyncio.sleep(0)
             continue
         last_process = now
 
         result = await asyncio.to_thread(engine.process, frame)
+        streamer.push(result.raw_frame)
+        if result.npu_debug:
+            mqtt.publish_npu_debug(result.npu_debug)
         await machine.update(result.landmarks, result.raw_frame.shape[0], now)
 
 
@@ -72,7 +76,7 @@ def main() -> None:
     mqtt.publish_feedback(feedback_idle())
 
     try:
-        asyncio.run(_main_loop(camera, engine, machine, streamer))
+        asyncio.run(_main_loop(camera, engine, machine, streamer, mqtt))
     except KeyboardInterrupt:
         print("\n>> 종료 중...")
     finally:

@@ -13,6 +13,7 @@ _SENSOR_STATE_TOPIC = "cammand/sensor/gesture/state"
 _TOPIC_FEEDBACK = "cammand/feedback"
 _TOPIC_POWER_PREFIX = "cammand/power"
 _TOPIC_KNOB_PREFIX = "cammand/knob"
+_TOPIC_NPU_DEBUG = "cammand/npu_debug"
 
 _SENSOR_CONFIG = {
     "name": "Cammand Gesture",
@@ -25,6 +26,12 @@ _FEEDBACK_CONFIG = {
     "unique_id": "cammand_feedback_sensor",
     "stat_t": _TOPIC_FEEDBACK,
     "icon": "mdi:gesture-tap",
+}
+_NPU_DEBUG_CONFIG = {
+    "name": "Cammand NPU Debug",
+    "unique_id": "cammand_npu_debug_sensor",
+    "stat_t": _TOPIC_NPU_DEBUG,
+    "icon": "mdi:brain",
 }
 
 
@@ -43,6 +50,11 @@ class MqttPublisher:
         print(f">> MQTT 연결 성공: rc={rc}")
         client.publish(_SENSOR_CONFIG_TOPIC, json.dumps(_SENSOR_CONFIG), retain=True)
         client.publish(_FEEDBACK_CONFIG_TOPIC, json.dumps(_FEEDBACK_CONFIG), retain=True)
+        client.publish(
+            "homeassistant/sensor/cammand_npu_debug/config",
+            json.dumps(_NPU_DEBUG_CONFIG),
+            retain=True,
+        )
         print(">> HA Auto-Discovery 등록 완료")
 
     def publish_feedback(self, text: str) -> None:
@@ -53,6 +65,9 @@ class MqttPublisher:
 
     def publish_knob(self, device_id: str, value_str: str) -> None:
         self._client.publish(f"{_TOPIC_KNOB_PREFIX}/{device_id}", value_str)
+
+    def publish_npu_debug(self, text: str) -> None:
+        self._client.publish(_TOPIC_NPU_DEBUG, text, qos=0)
 
     def disconnect(self) -> None:
         self._client.loop_stop()

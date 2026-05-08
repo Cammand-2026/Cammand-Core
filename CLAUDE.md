@@ -22,6 +22,26 @@
 - 정적: 손가락 수 1~5 → 기기 선택
 - 동적: 검지 O궤적=ON, X궤적=OFF, 위스와이프=노브UP, 아래스와이프=노브DOWN
 
+## 추론 파이프라인 아키텍처
+
+### CPU 담당 (변경 없음)
+- MediaPipe Hands로 21개 관절 좌표(x, y, z) 추출
+- 좌표 전처리 후 NPU로 전달
+
+### NPU 담당 (Hailo-8L, MLP 모델)
+- **정적 제스처 모델** (손가락 수 1~5 분류)
+  - 입력: `float32 (1, 63)` — 21개 × xyz
+  - 출력: `float32 (1, 5)` — logit (클래스 5개)
+- **동적 제스처 모델** (O/X/스와이프 분류)
+  - 입력: `float32 (1, 1890)` — 시퀀스 30프레임 × 21개 × xyz = 1890
+  - 출력: `float32 (1, 4)` — logit (클래스 4개)
+
+### 개발 단계 전략 (Hot Swap)
+1. **현재 MVP**: CPU 룰베이스 제스처 인식 (MediaPipe 좌표 → recognizer.py)
+2. **파이프라인 검증**: 시중 .pt/.onnx → .hef 변환 후 HailoEngine으로 파이프라인 end-to-end 검증
+3. **MLP 모델 교체**: AI팀 개발 MLP .hef만 교체하면 바로 동작 (HailoEngine 코드 변경 없음)
+- .hef 파일은 `models/` 디렉토리에 배치, 별도 `cammand-models` 레포에서 관리
+
 ## 코드 컨벤션
 - Python 3.11+, asyncio 기반
 - 타입 힌트 필수

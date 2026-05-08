@@ -25,6 +25,7 @@ class EngineResult:
     landmarks: HandLandmarks | None  # None이면 hand_detected=False
     raw_frame: np.ndarray
     annotated_frame: np.ndarray
+    npu_debug: str | None = None  # HailoEngine만 채움: "NPU: class=234 (0.82) → THREE"
 
 
 class GestureEngine(ABC):
