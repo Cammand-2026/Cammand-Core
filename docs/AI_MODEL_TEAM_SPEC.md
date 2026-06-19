@@ -85,6 +85,66 @@ Cammand는 라즈베리파이5 위에서 동작하는 제스처 인식 스마트
 
 ---
 
+## 3-3. Hailo-8L 지원 연산자 제약 (모델 설계 필독)
+
+> **출처**: Hailo Dataflow Compiler User Guide v3.27~3.30 (공식 문서)  https://mmmsk.ai.kr/Projects/Embedded-AI/files/hailo_dataflow_compiler_v3.27.0_user_guide.pdf
+> AI팀은 아래 제약을 반드시 확인하고 모델을 설계해야 합니다.  
+> 지원되지 않는 연산자를 사용하면 `.pt → .onnx → .hef` 변환 파이프라인에서 **파싱 에러**가 발생합니다.
+
+---
+
+### ✅ 사용 가능한 레이어
+
+| 레이어 | PyTorch | 비고 |
+|--------|---------|------|
+| Dense (FC) | `nn.Linear` | 첫 번째 레이어 또는 Dense/Conv/Pool 뒤에만 사용 가능 |
+| Batch Normalization | `nn.BatchNorm1d` | Dense/Conv에 자동 fuse됨 |
+| Dropout | `nn.Dropout` | 학습 시에만 동작, 추론 시 자동 제거됨 |
+| Reshape | — | Conv↔Dense 전환 시에만 허용. **마지막 레이어에 사용 금지** |
+| Softmax | `nn.Softmax` | Dense 뒤 `(batch, features)` 형태에서만 지원 |
+| Add / Subtract | — | bias addition 등 기본 연산 지원 |
+
+---
+
+### ✅ 사용 가능한 활성화 함수
+
+| 활성화 함수 | PyTorch | 안정성 |
+|-------------|---------|--------|
+| ReLU | `nn.ReLU` | ✅ 안정 (권장) |
+| ReLU6 | `nn.ReLU6` | ✅ 안정 |
+| Sigmoid | `nn.Sigmoid` | ✅ 안정 |
+| Tanh | `nn.Tanh` | ✅ 안정 |
+| Leaky ReLU | `nn.LeakyReLU` | ✅ 안정 |
+| Hard-Sigmoid | `nn.Hardsigmoid` | ✅ 안정 |
+| ELU | `nn.ELU` | ✅ 안정 |
+| GeLU | `nn.GELU` | ⚠️ preview (불안정, **사용 금지**) |
+| Hard-Swish | `nn.Hardswish` | ⚠️ preview (불안정, **사용 금지**) |
+
+---
+
+### ❌ 절대 사용 금지
+
+```python
+# ❌ forward() 안에 Python 제어 흐름 사용 금지
+# ONNX export 시 변환 불가
+def forward(self, x):
+    if x.shape[0] > 1:   # ❌
+        ...
+    for i in range(n):   # ❌
+        ...
+
+# ❌ 커스텀 레이어 / 커스텀 연산자 사용 금지
+# Hailo parser가 인식 불가
+
+# ❌ 동적 shape 사용 금지
+# HailoRT는 고정 입력 shape만 지원
+
+# ❌ GeLU, Hardswish 사용 금지
+# preview 단계로 변환 실패 가능성 높음
+```
+
+---
+
 ## 4. 현재 구현된 추론 파이프라인
 
 ### 4-1. 파이프라인 검증 현황
