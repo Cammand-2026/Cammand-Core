@@ -1,6 +1,7 @@
 # Cammand AI 모델팀 인수인계 문서
 
 > **작성일**: 2026-05-08  
+> **최종 수정**: 2026-06-19  
 > **수신**: AI 모델팀 (제스처 분류 MLP 개발 담당)  
 > **발신**: HW/SW 담당 (백승찬)
 
@@ -12,7 +13,7 @@ Cammand는 라즈베리파이5 위에서 동작하는 제스처 인식 스마트
 카메라 앞에서 손 제스처만으로 조명, 선풍기, 에어컨, 가습기를 제어합니다.
 
 **현재 개발 단계**: CPU 룰베이스 MVP 완성 + Hailo NPU 파이프라인 인프라 검증 완료  
-**다음 단계**: AI팀이 개발한 MLP `.hef` 모델 수령 → HailoEngine에 연결
+**다음 단계**: AI팀이 개발한 MLP `.pt` 모델 수령 → HW/SW팀이 `.hef`로 변환 → HailoEngine에 연결
 
 ---
 
@@ -49,7 +50,7 @@ Cammand는 라즈베리파이5 위에서 동작하는 제스처 인식 스마트
 | 출력 | `float32 (1, 5)` — logit (Softmax 미포함) |
 | 클래스 수 | 5개 |
 | 클래스 정의 | 0:ONE, 1:TWO, 2:THREE, 3:FOUR, 4:FIVE |
-| 파일 형식 | `.hef` (Hailo-8L 전용 컴파일) |
+| **납품 파일 형식** | **`.pt` (PyTorch)** |
 
 **클래스 의미**:
 
@@ -69,7 +70,7 @@ Cammand는 라즈베리파이5 위에서 동작하는 제스처 인식 스마트
 | 출력 | `float32 (1, 4)` — logit (Softmax 미포함) |
 | 클래스 수 | 4개 |
 | 클래스 정의 | 0:CIRCLE, 1:CROSS, 2:SWIPE_UP, 3:SWIPE_DOWN |
-| 파일 형식 | `.hef` (Hailo-8L 전용 컴파일) |
+| **납품 파일 형식** | **`.pt` (PyTorch)** |
 
 **클래스 의미**:
 
@@ -182,7 +183,8 @@ class HailoEngine(GestureEngine):
         infer_model.output().set_format_type(FormatType.FLOAT32)
 
         # 4. 추론 컨텍스트 진입 (앱 수명 동안 유지)
-        self._configured = infer_model.configure().__enter__()
+        self._configured_ctx = infer_model.configure()
+        self._configured = self._configured_ctx.__enter__()
 
         # 5. 입출력 버퍼 사전 할당 (매 프레임 재사용, 메모리 할당 없음)
         self._in_buf  = np.zeros(input_shape,  dtype=np.float32)
@@ -244,7 +246,29 @@ class GestureEngine(ABC):
 
 ## 5. AI팀 모델 수령 후 교체 절차 (Hot Swap)
 
-### Step 1 — `.hef` 파일 배치
+### Step 1 — `.pt` → `.hef` 변환 (HW/SW팀 담당)
+
+AI팀으로부터 `.pt` 파일을 수령한 후, HW/SW팀이 Hailo SDK를 사용해 `.hef`로 변환합니다.
+
+```bash
+# 1) PyTorch → ONNX 변환 (AI팀 환경 또는 로컬 PC에서)
+python -c "
+import torch
+model = torch.load('gesture_static.pt')
+model.eval()
+dummy = torch.zeros(1, 63)
+torch.onnx.export(model, dummy, 'gesture_static.onnx', opset_version=11)
+"
+
+# 2) ONNX → HEF 변환 (Hailo SDK 설치된 환경에서)
+hailomz compile \
+  --onnx gesture_static.onnx \
+  --hw-arch hailo8l \
+  --output-name gesture_static
+# 결과: gesture_static.hef 생성
+```
+
+변환된 `.hef` 파일은 `models/` 폴더에 배치:
 
 ```
 Cammand/
@@ -308,8 +332,8 @@ hailo_dynamic_hef: str = "models/gesture_dynamic.hef"
 | 카메라 | Raspberry Pi Camera Module 3 (imx708) |
 | 해상도 | 640×360 (처리), 9:16 비율 |
 
-**HEF 컴파일 타겟**: 반드시 `hailo8l` 타겟으로 컴파일 (`h8l` 접미사)  
-Hailo-8(h8)용 HEF와 호환되지 않음.
+> **[HW/SW팀 참고]** HEF 변환 시 반드시 `hailo8l` 타겟으로 컴파일 (`--hw-arch hailo8l`).  
+> Hailo-8(h8)용 HEF와 호환되지 않음.
 
 ---
 
@@ -333,10 +357,11 @@ Hailo-8(h8)용 HEF와 호환되지 않음.
 
 ## 8. 검증 방법
 
-모델 수령 후 아래 순서로 검증:
+모델 수령 및 변환 후 아래 순서로 검증:
 
 ```bash
-# 1. models/ 폴더에 .hef 파일 배치
+# 1. .pt → .hef 변환 완료 후 models/ 폴더에 배치 (Step 1 참고)
+
 # 2. .env 수정
 GESTURE_ENGINE=hailo
 HAILO_HEF_PATH=models/gesture_static.hef  # 또는 dynamic
@@ -359,9 +384,9 @@ cammand
 | 레포 | 주소 | 내용 |
 |------|------|------|
 | Core | `github.com/Cammand-2026/Cammand-Core` | SW 전체 (이 문서) |
-| Models | `github.com/Cammand-2026/cammand-models` | `.hef` 파일 관리 |
+| Models | `github.com/Cammand-2026/cammand-models` | `.pt` 파일 및 변환 산출물 관리 |
 
-**AI팀 산출물 전달 위치**: `cammand-models` 레포에 `.hef` 파일 업로드 후 Core팀에 통보.
+**AI팀 산출물 전달 위치**: `cammand-models` 레포에 `.pt` 파일 업로드 후 Core팀에 통보.
 
 ---
 
