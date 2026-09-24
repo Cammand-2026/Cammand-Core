@@ -4,19 +4,12 @@ import math
 
 
 class TrajectoryTracker:
-    """
-    검지 끝(lm[8]) 좌표를 누적해 원형(ON)과 도리도리(OFF)를 판별한다.
-    오인식 방지 핵심: Y범위/X범위 비율로 원형↔도리도리를 분리.
-      - 원형: 각도누적 ≥ 360° AND Y/X ≥ YX_THRESHOLD AND 평균반지름 ≥ MIN_RADIUS
-      - 도리도리: X반전 ≥ 2회 AND 반전진폭 ≥ SHAKE_AMP AND Y/X < YX_THRESHOLD
-    """
-
-    BUFFER_LEN: int = 35       # ~3.5초 @ 10Hz
-    MIN_RADIUS: float = 0.08   # normalized 최소 반지름
-    MIN_CIRCLE_PTS: int = 20   # 원형 판정 최소 포인트 수
-    MIN_SHAKE_PTS: int = 10    # 도리도리 판정 최소 포인트 수
-    SHAKE_AMP: float = 0.08    # 반전당 최소 진폭 (normalized)
-    YX_THRESHOLD: float = 0.4  # 원형↔도리도리 분리 기준 (원형≥, 도리도리<)
+    BUFFER_LEN: int = 35
+    MIN_RADIUS: float = 0.08
+    MIN_CIRCLE_PTS: int = 20
+    MIN_SHAKE_PTS: int = 10
+    SHAKE_AMP: float = 0.08
+    YX_THRESHOLD: float = 0.4
 
     def __init__(self) -> None:
         self.points: list[tuple[float, float]] = []
@@ -37,7 +30,6 @@ class TrajectoryTracker:
         return y_range / x_range if x_range > 1e-6 else 0.0
 
     def check_circle(self) -> bool:
-        """각도누적 ≥ 360° AND Y/X ≥ YX_THRESHOLD AND 평균반지름 ≥ MIN_RADIUS"""
         if len(self.points) < self.MIN_CIRCLE_PTS:
             return False
         if self._yx_ratio() < self.YX_THRESHOLD:
@@ -62,7 +54,6 @@ class TrajectoryTracker:
         return abs(total_angle) >= 2 * math.pi
 
     def check_shake(self) -> bool:
-        """X반전 ≥ 2회 AND 반전진폭 ≥ SHAKE_AMP AND Y/X < YX_THRESHOLD"""
         if len(self.points) < self.MIN_SHAKE_PTS:
             return False
         if self._yx_ratio() >= self.YX_THRESHOLD:
@@ -70,7 +61,7 @@ class TrajectoryTracker:
         xs = [p[0] for p in self.points]
         reversals = 0
         last_extreme_x = xs[0]
-        direction = 0  # 0=미정, 1=오른쪽, -1=왼쪽
+        direction = 0
         for x in xs[1:]:
             delta = x - last_extreme_x
             if direction == 0:

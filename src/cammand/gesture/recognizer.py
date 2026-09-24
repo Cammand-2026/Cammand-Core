@@ -6,12 +6,10 @@ from ..engine.base import HandLandmarks, Landmark
 
 
 def _palm_size(lm: HandLandmarks) -> float:
-    """손목(0)~중지MCP(9) 거리. 임계값 기준."""
     return math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y)
 
 
 def _finger_open(lm: HandLandmarks, tip: int, pip: int, ref: float) -> bool:
-    """z로 말린 손가락을 먼저 제외하고, y 비교 또는 손목 거리 비교로 펼침 판정."""
     if lm[tip].z < lm[pip].z - ref * 0.3:
         return False
     y_open = lm[tip].y < lm[pip].y
@@ -22,7 +20,6 @@ def _finger_open(lm: HandLandmarks, tip: int, pip: int, ref: float) -> bool:
 
 
 def _four_fingers_open(lm: HandLandmarks, ref: float) -> tuple[bool, bool, bool, bool]:
-    """검지·중지·약지·새끼 펼침 여부."""
     return (
         _finger_open(lm, 8,  6,  ref),
         _finger_open(lm, 12, 10, ref),
@@ -42,24 +39,18 @@ def _dist3(a: Landmark, b: Landmark) -> float:
 
 
 def _thumb_open_3d(lm: HandLandmarks) -> bool:
-    """엄지 MCP(2) 기준 3D 거리 판정. 엄지만 펴는 별칭 제스처용."""
     d_tip = _dist3(lm[4], lm[2])
     d_ip = _dist3(lm[3], lm[2])
     return d_tip > d_ip * 1.15
 
 
 def _is_horizontal(lm: HandLandmarks) -> bool:
-    """손목→중지MCP 벡터가 가로(±59°)인지."""
     dx = lm[9].x - lm[0].x
     dy = lm[9].y - lm[0].y
     return abs(dx) > abs(dy) * 0.6
 
 
 def recognize_selection(landmarks: HandLandmarks) -> str:
-    """
-    ONE | TWO | THREE | FOUR | FIVE | UNKNOWN
-    ONE/TWO는 엄지가 접혀 있을 때만 (엄지 펼침은 별칭 제스처로 처리).
-    """
     lm = landmarks
     idx, mid, rng, pnk = _four_fingers_open(lm, _palm_size(lm))
     thm = _thumb_open(lm)
@@ -76,7 +67,6 @@ def recognize_selection(landmarks: HandLandmarks) -> str:
 
 
 def recognize_control(landmarks: HandLandmarks) -> str:
-    """FIVE_HORIZONTAL | FIST | UNKNOWN"""
     lm = landmarks
     ref = _palm_size(lm)
     idx, mid, rng, pnk = _four_fingers_open(lm, ref)
@@ -91,7 +81,6 @@ def recognize_control(landmarks: HandLandmarks) -> str:
         )
         if not closed_ok:
             return "UNKNOWN"
-        # 엄지가 뚜렷하게 위/아래를 향하면 주먹이 아님
         offset = lm[5].y - lm[4].y
         if offset > ref * 0.5 or offset < -ref * 0.5:
             return "UNKNOWN"
@@ -101,7 +90,6 @@ def recognize_control(landmarks: HandLandmarks) -> str:
 
 
 def _classify_selection_alias(landmarks: HandLandmarks) -> str | None:
-    """엄지척 → ONE, 총모양 → TWO, 엄지+검지+중지 → THREE."""
     lm = landmarks
     ref = _palm_size(lm)
     idx, mid, rng, pnk = _four_fingers_open(lm, ref)
@@ -120,7 +108,6 @@ def _classify_selection_alias(landmarks: HandLandmarks) -> str | None:
 
 
 def resolve_device_selection(landmarks: HandLandmarks) -> str:
-    """recognize_selection() 우선, UNKNOWN이면 별칭 제스처 확인."""
     primary = recognize_selection(landmarks)
     if primary != "UNKNOWN":
         return primary
@@ -129,7 +116,6 @@ def resolve_device_selection(landmarks: HandLandmarks) -> str:
 
 
 def recognize_reserved(landmarks: HandLandmarks) -> str:
-    """기능 미할당 예약 제스처. ROCK | OK_SIGN | UNKNOWN"""
     lm = landmarks
     ref = _palm_size(lm)
     idx, mid, rng, pnk = _four_fingers_open(lm, ref)
@@ -150,7 +136,6 @@ _NPU_CONFIDENCE = 0.9
 
 
 def describe_gesture(landmarks: HandLandmarks) -> str:
-    """cammand/npu_debug 토픽 표시 문자열."""
     sel = recognize_selection(landmarks)
     if sel != "UNKNOWN":
         return f"NPU: class={_NPU_CLASS_IDS[sel]} ({_NPU_CONFIDENCE:.2f}) → {sel}"
