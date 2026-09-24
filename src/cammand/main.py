@@ -5,6 +5,7 @@ Cammand 진입점 — 의존성 조립 및 asyncio 메인 루프.
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 import time
 
@@ -15,6 +16,8 @@ from .io.camera import CameraReader
 from .io.mqtt_client import MqttPublisher
 from .io.stream_server import MjpegServer
 from .state.machine import StateMachine
+
+logger = logging.getLogger(__name__)
 
 
 def _build_engine() -> GestureEngine:
@@ -55,6 +58,11 @@ async def _main_loop(
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    )
+
     mqtt = MqttPublisher()
     mqtt.connect()
 
@@ -63,7 +71,7 @@ def main() -> None:
 
     streamer = MjpegServer()
     threading.Thread(target=streamer.run, daemon=True, name="mjpeg").start()
-    print(f">> 스트리밍 서버: http://0.0.0.0:{settings.stream_port}/stream")
+    logger.info("스트리밍 서버: http://0.0.0.0:%d/stream", settings.stream_port)
 
     engine = _build_engine()
 
@@ -71,6 +79,7 @@ def main() -> None:
         on_feedback=mqtt.publish_feedback,
         on_power=mqtt.publish_power,
         on_knob=mqtt.publish_knob,
+        on_npu_debug=mqtt.publish_npu_debug,
     )
 
     mqtt.publish_feedback(feedback_idle())
@@ -78,7 +87,7 @@ def main() -> None:
     try:
         asyncio.run(_main_loop(camera, engine, machine, streamer, mqtt))
     except KeyboardInterrupt:
-        print("\n>> 종료 중...")
+        logger.info("종료 중...")
     finally:
         engine.close()
         camera.stop()

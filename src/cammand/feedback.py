@@ -12,6 +12,13 @@ def feedback_idle() -> str:
     return "손을 카메라에 보여주세요"
 
 
+_RESERVED_LABELS = {"ROCK": "락앤롤", "OK_SIGN": "OK사인"}
+
+
+def feedback_reserved(gesture: str) -> str:
+    return f"{_RESERVED_LABELS.get(gesture, gesture)} 인식됨"
+
+
 def feedback_selecting(
     device_name: str,
     elapsed: float,
@@ -42,5 +49,5 @@ def feedback_onoff_mode(device_name: str) -> str:
     return f"{device_name}\n원형=ON  도리도리=OFF"
 
 
-def feedback_onoff_entering(elapsed: float) -> str:  # noqa: ARG001
+def feedback_onoff_entering() -> str:
     return "ON/OFF 모드 진입 중"

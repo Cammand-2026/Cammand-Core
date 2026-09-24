@@ -3,7 +3,6 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 from ..config import settings
 from ..devices import DEVICES, DeviceConfig
@@ -15,12 +14,22 @@ from ..feedback import (
     feedback_onoff_entering,
     feedback_onoff_mode,
     feedback_power,
+    feedback_reserved,
     feedback_selected,
     feedback_selecting,
 )
-from ..gesture.recognizer import recognize_control, recognize_selection
+from ..gesture.recognizer import (
+    describe_gesture,
+    recognize_control,
+    recognize_reserved,
+    recognize_selection,
+    resolve_device_selection,
+)
 from ..gesture.trajectory import TrajectoryTracker
 from .phase import Phase
+
+# power=on 직후 HA가 노브 값을 덮어쓰지 않도록 지연 후 복원
+_KNOB_RESTORE_DELAY_SEC = 0.3
 
 
 @dataclass
@@ -53,7 +62,7 @@ class _State:
     knob_last_pub: float = 0.0
     knob_values: dict[str, float] = field(default_factory=dict)
 
-    # power=on 후 노브 복원 지연 (HA 충돌 방지)
+    # power=on 후 노브 복원 대기: device_id → (복원값, 발행 시각)
     pending_restore: dict[str, tuple[float, float]] = field(default_factory=dict)
 
     last_hand_time: float = field(default_factory=time.monotonic)
@@ -61,6 +70,10 @@ class _State:
 
 def _knob_fmt(value: float, step: float) -> str:
     return f"{value:.0f}" if step == int(step) else f"{value:.1f}"
+
+
+def _device_by_id(device_id: str) -> DeviceConfig:
+    return next(d for d in DEVICES.values() if d.id == device_id)
 
 
 class StateMachine:
@@ -76,18 +89,26 @@ class StateMachine:
         on_feedback: Callable[[str], None],
         on_power: Callable[[str, str], None],
         on_knob: Callable[[str, str], None],
+        on_npu_debug: Callable[[str], None] = lambda _text: None,
     ) -> None:
         self._s = _State()
         self._cfg = settings
         self._on_feedback = on_feedback
         self._on_power = on_power
         self._on_knob = on_knob
+        self._on_npu_debug = on_npu_debug
         self._prev_feedback: str = ""
+        self._prev_npu_debug: str = ""
 
     def _publish_feedback(self, text: str) -> None:
         if text != self._prev_feedback:
             self._on_feedback(text)
             self._prev_feedback = text
+
+    def _publish_npu_debug(self, text: str) -> None:
+        if text != self._prev_npu_debug:
+            self._on_npu_debug(text)
+            self._prev_npu_debug = text
 
     def _go_idle(self) -> None:
         s = self._s
@@ -104,6 +125,25 @@ class StateMachine:
         s.trajectory.reset()
         self._publish_feedback(feedback_idle())
 
+    def _enter_controlling(self, wrist_y: float) -> None:
+        s = self._s
+        dev = s.selected_device
+        s.phase = Phase.CONTROLLING
+        s.knob_start_y = wrist_y
+        s.knob_init_val = s.knob_values.get(dev.id, (dev.knob_min + dev.knob_max) / 2.0)
+        s.knob_last_pub = 0.0
+        s.five_h_start = 0.0
+
+    def _hold_fist(self, now: float) -> None:
+        s = self._s
+        if s.fist_start == 0.0:
+            s.fist_start = now
+        elapsed = now - s.fist_start
+        if elapsed >= self._cfg.fist_hold_sec:
+            self._go_idle()
+        else:
+            self._publish_feedback(feedback_fist_countdown(elapsed))
+
     async def update(
         self,
         landmarks: HandLandmarks | None,
@@ -116,8 +156,7 @@ class StateMachine:
         # 노브 복원 대기 처리
         for did, (val, after) in list(s.pending_restore.items()):
             if now >= after:
-                dev = next(d for d in DEVICES.values() if d.id == did)
-                self._on_knob(did, _knob_fmt(val, dev.knob_step))
+                self._on_knob(did, _knob_fmt(val, _device_by_id(did).knob_step))
                 del s.pending_restore[did]
 
         # 타임아웃
@@ -134,6 +173,7 @@ class StateMachine:
 
         lm = landmarks
         wrist_y = lm[0].y * frame_height  # 픽셀 단위
+        self._publish_npu_debug(describe_gesture(lm))
 
         if s.phase == Phase.IDLE:
             self._handle_idle(lm, now)
@@ -150,16 +190,23 @@ class StateMachine:
 
     def _handle_idle(self, lm: HandLandmarks, now: float) -> None:
         s = self._s
-        gesture = recognize_selection(lm)
+        gesture = resolve_device_selection(lm)
         if gesture in DEVICES:
             s.phase = Phase.SELECTING
             s.sel_candidate = gesture
             s.sel_start = now
             self._publish_feedback(feedback_selecting(DEVICES[gesture].name, 0.0))
+            return
+
+        reserved = recognize_reserved(lm)
+        if reserved != "UNKNOWN":
+            self._publish_feedback(feedback_reserved(reserved))
+        else:
+            self._publish_feedback(feedback_idle())
 
     def _handle_selecting(self, lm: HandLandmarks, now: float) -> None:
         s = self._s
-        gesture = recognize_selection(lm)
+        gesture = resolve_device_selection(lm)
         if gesture != s.sel_candidate:
             if gesture in DEVICES:
                 s.sel_candidate = gesture
@@ -182,6 +229,7 @@ class StateMachine:
         s = self._s
         ctrl = recognize_control(lm)
         sel = recognize_selection(lm)
+        sel_dev = resolve_device_selection(lm)
 
         if sel == "ONE":
             # ONE(검지) 유지 → ONOFF_CONTROL 진입
@@ -198,7 +246,7 @@ class StateMachine:
                 s.onoff_entry_start = 0.0
                 self._publish_feedback(feedback_onoff_mode(s.selected_device.name))
             else:
-                self._publish_feedback(feedback_onoff_entering(elapsed))
+                self._publish_feedback(feedback_onoff_entering())
 
         elif ctrl == "FIVE_HORIZONTAL":
             s.onoff_entry_start = 0.0
@@ -208,48 +256,35 @@ class StateMachine:
             if s.five_h_start == 0.0:
                 s.five_h_start = now
             elif now - s.five_h_start >= self._cfg.five_h_confirm_sec:
-                dev = s.selected_device
-                s.phase = Phase.CONTROLLING
-                s.knob_start_y = wrist_y
-                s.knob_init_val = s.knob_values.get(
-                    dev.id, (dev.knob_min + dev.knob_max) / 2.0
-                )
-                s.knob_last_pub = 0.0
-                s.five_h_start = 0.0
+                self._enter_controlling(wrist_y)
 
         elif ctrl == "FIST":
             s.onoff_entry_start = 0.0
             s.five_h_start = 0.0
             s.switch_candidate = ""
             s.switch_start = 0.0
-            if s.fist_start == 0.0:
-                s.fist_start = now
-            elapsed = now - s.fist_start
-            if elapsed >= self._cfg.fist_hold_sec:
-                self._go_idle()
-            else:
-                self._publish_feedback(feedback_fist_countdown(elapsed))
+            self._hold_fist(now)
 
-        elif sel in DEVICES and sel != s.selected_gesture and sel != "ONE":
+        elif sel_dev in DEVICES and sel_dev != s.selected_gesture and sel_dev != "ONE":
             # 기기 전환 후보 — SWITCH_BUFFER_SEC 이후 카운트다운 시작
             s.onoff_entry_start = 0.0
             s.five_h_start = 0.0
             s.fist_start = 0.0
-            if sel != s.switch_candidate:
-                s.switch_candidate = sel
+            if sel_dev != s.switch_candidate:
+                s.switch_candidate = sel_dev
                 s.switch_start = now
             else:
                 elapsed = now - s.switch_start
                 buffered = elapsed - self._cfg.switch_buffer_sec
                 if buffered >= self._cfg.switch_hold_sec:
-                    s.selected_device = DEVICES[sel]
-                    s.selected_gesture = sel
+                    s.selected_device = DEVICES[sel_dev]
+                    s.selected_gesture = sel_dev
                     s.switch_candidate = ""
                     s.switch_start = 0.0
                     self._publish_feedback(feedback_selected(s.selected_device.name))
                 elif buffered > 0:
                     self._publish_feedback(
-                        feedback_selecting(DEVICES[sel].name, buffered, self._cfg.switch_hold_sec)
+                        feedback_selecting(DEVICES[sel_dev].name, buffered, self._cfg.switch_hold_sec)
                     )
 
         else:
@@ -272,25 +307,12 @@ class StateMachine:
             if s.five_h_start == 0.0:
                 s.five_h_start = now
             elif now - s.five_h_start >= self._cfg.five_h_confirm_sec:
-                dev = s.selected_device
-                s.phase = Phase.CONTROLLING
-                s.knob_start_y = wrist_y
-                s.knob_init_val = s.knob_values.get(
-                    dev.id, (dev.knob_min + dev.knob_max) / 2.0
-                )
-                s.knob_last_pub = 0.0
-                s.five_h_start = 0.0
+                self._enter_controlling(wrist_y)
 
         elif ctrl == "FIST":
             s.trajectory.reset()
             s.five_h_start = 0.0
-            if s.fist_start == 0.0:
-                s.fist_start = now
-            elapsed = now - s.fist_start
-            if elapsed >= self._cfg.fist_hold_sec:
-                self._go_idle()
-            else:
-                self._publish_feedback(feedback_fist_countdown(elapsed))
+            self._hold_fist(now)
 
         else:
             s.fist_start = 0.0
@@ -301,7 +323,9 @@ class StateMachine:
             if s.trajectory.check_circle():
                 self._on_power(did, "on")
                 if did in s.knob_values:
-                    s.pending_restore[did] = (s.knob_values[did], now + 0.3)
+                    s.pending_restore[did] = (
+                        s.knob_values[did], now + _KNOB_RESTORE_DELAY_SEC
+                    )
                 self._publish_feedback(feedback_power(s.selected_device.name, "on"))
                 s.trajectory.reset()
 

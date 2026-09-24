@@ -1,10 +1,10 @@
 """
-Hailo-8L NPU 기반 제스처 엔진.
-
-현재: mobilenetv2-12.hef stand-in으로 파이프라인 인프라 검증용.
-실제 MLP .hef 교체 시 전처리 로직(_preprocess)과 레이블 매핑만 수정.
+Hailo-8L NPU 제스처 엔진.
+현재 mobilenetv2-12.hef stand-in 사용. MLP .hef 교체 시 _preprocess와 레이블 매핑 교체.
 """
 from __future__ import annotations
+
+import logging
 
 import cv2
 import mediapipe as mp
@@ -12,6 +12,8 @@ import numpy as np
 
 from .base import EngineResult, GestureEngine, Landmark
 from .imagenet_classes import IMAGENET_CLASSES
+
+logger = logging.getLogger(__name__)
 
 # ImageNet 정규화 상수
 _MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
@@ -35,12 +37,7 @@ def _class_to_gesture(class_id: int) -> str:
 
 
 class HailoEngine(GestureEngine):
-    """
-    CPU(MediaPipe 랜드마크 추출) + NPU(Hailo-8L 이미지 분류) 혼합 엔진.
-
-    - MediaPipe: 기존 룰베이스 상태 머신용 21개 랜드마크 추출
-    - Hailo NPU: 카메라 프레임 → HEF 추론 → npu_debug 문자열 생성
-    """
+    """MediaPipe 랜드마크 추출(CPU) + HEF 추론(NPU)."""
 
     def __init__(self, hef_path: str) -> None:
         # ── MediaPipe 초기화 (MediaPipeEngine과 동일) ─────────────────────────
@@ -92,8 +89,8 @@ class HailoEngine(GestureEngine):
             output_buffers = {self._output_name: self._out_buf},
         )
 
-        print(f">> HailoEngine: {hef_path} 로드 완료")
-        print(f">> 입력: {self._input_shape}  출력: {self._output_shape}")
+        logger.info("HEF 로드 완료: %s (입력 %s, 출력 %s)",
+                    hef_path, self._input_shape, self._output_shape)
 
     def _preprocess(self, frame: np.ndarray) -> None:
         """카메라 프레임 → self._in_buf (ImageNet 전처리, in-place)."""

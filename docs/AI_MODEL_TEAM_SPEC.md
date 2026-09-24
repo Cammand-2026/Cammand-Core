@@ -12,37 +12,14 @@
 Cammand는 라즈베리파이5 위에서 동작하는 제스처 인식 스마트홈 허브입니다.  
 카메라 앞에서 손 제스처만으로 조명, 선풍기, 에어컨, 가습기를 제어합니다.
 
-**현재 개발 단계**: CPU 룰베이스 MVP 완성 + Hailo NPU 파이프라인 인프라 검증 완료  
+**현재 개발 단계**: MVP 완성 + Hailo NPU 파이프라인 인프라 검증 완료  
 **다음 단계**: AI팀이 개발한 MLP `.pt` 모델 수령 → HW/SW팀이 `.hef`로 변환 → HailoEngine에 연결
 
 ---
 
-## 2. 시스템 아키텍처
+## 2. AI팀이 개발해야 할 모델 스펙
 
-```
-카메라 (Picamera2, 640×360)
-        │
-        ▼
-[CPU] MediaPipe Hands
-  21개 관절 좌표 추출 (x, y, z, 각 0.0~1.0 정규화)
-        │
-        ├──────────────────────────────────────────────┐
-        │                                              │
-        ▼                                              ▼
-[CPU] 룰베이스 상태 머신                    [NPU] Hailo-8L MLP 모델
-  기기 선택 / 전원 / 노브 제어               제스처 분류
-  (현재 MVP 동작 중)                        (AI팀 모델 연결 예정)
-        │                                              │
-        ▼                                              ▼
-[MQTT] Home Assistant                     [MQTT] 분류 결과 전송
-  기기 제어 명령                             cammand/npu_debug 토픽
-```
-
----
-
-## 3. AI팀이 개발해야 할 모델 스펙
-
-### 3-1. 정적 제스처 모델 (손가락 수 분류)
+### 2-1. 정적 제스처 모델 (손가락 수 분류)
 
 | 항목 | 규격 |
 |------|------|
@@ -62,7 +39,7 @@ Cammand는 라즈베리파이5 위에서 동작하는 제스처 인식 스마트
 | FOUR (3) | 4개 | 에어컨 |
 | FIVE (4) | 5개 | 가습기 |
 
-### 3-2. 동적 제스처 모델 (궤적 분류)
+### 2-2. 동적 제스처 모델 (궤적 분류)
 
 | 항목 | 규격 |
 |------|------|
@@ -86,7 +63,7 @@ Cammand는 라즈베리파이5 위에서 동작하는 제스처 인식 스마트
 
 ---
 
-## 3-3. Hailo-8L 지원 연산자 제약 (모델 설계 필독)
+## 2-3. Hailo-8L 지원 연산자 제약 (모델 설계 필독)
 
 > **출처**: Hailo Dataflow Compiler User Guide v3.27~3.30 (공식 문서)  https://mmmsk.ai.kr/Projects/Embedded-AI/files/hailo_dataflow_compiler_v3.27.0_user_guide.pdf
 > AI팀은 아래 제약을 반드시 확인하고 모델을 설계해야 합니다.  
@@ -146,9 +123,9 @@ def forward(self, x):
 
 ---
 
-## 4. 현재 구현된 추론 파이프라인
+## 3. 현재 구현된 추론 파이프라인
 
-### 4-1. 파이프라인 검증 현황
+### 3-1. 파이프라인 검증 현황
 
 MobileNetV2 `.hef`를 stand-in으로 사용해 전체 파이프라인을 검증 완료:
 
@@ -160,7 +137,7 @@ MobileNetV2 `.hef`를 stand-in으로 사용해 전체 파이프라인을 검증 
 ✅ MediaPipe + Hailo 동시 실행 (CPU/NPU 병렬)
 ```
 
-### 4-2. HailoEngine 코드 구조
+### 3-2. HailoEngine 코드 구조
 
 **파일 위치**: `src/cammand/engine/hailo_engine.py`
 
@@ -218,7 +195,7 @@ class HailoEngine(GestureEngine):
         self._vdevice.release()
 ```
 
-### 4-3. 엔진 인터페이스 (GestureEngine ABC)
+### 3-3. 엔진 인터페이스 (GestureEngine ABC)
 
 **파일 위치**: `src/cammand/engine/base.py`
 
@@ -244,7 +221,7 @@ class GestureEngine(ABC):
 
 ---
 
-## 5. AI팀 모델 수령 후 교체 절차 (Hot Swap)
+## 4. AI팀 모델 수령 후 교체 절차 (Hot Swap)
 
 ### Step 1 — `.pt` → `.hef` 변환 (HW/SW팀 담당)
 
@@ -321,7 +298,7 @@ hailo_dynamic_hef: str = "models/gesture_dynamic.hef"
 
 ---
 
-## 6. 하드웨어 및 런타임 환경
+## 5. 하드웨어 및 런타임 환경
 
 | 항목 | 스펙 |
 |------|------|
@@ -337,7 +314,7 @@ hailo_dynamic_hef: str = "models/gesture_dynamic.hef"
 
 ---
 
-## 7. 데이터 수집 가이드라인
+## 6. 데이터 수집 가이드라인
 
 ### 정적 제스처 (손가락 수)
 
@@ -351,11 +328,11 @@ hailo_dynamic_hef: str = "models/gesture_dynamic.hef"
 - 시퀀스 길이: **고정 30프레임** (가변 길이 불가)
 - 카메라 fps 기준: 30fps → 1초 동작
 - 입력 포맷: 30프레임 × 63 = `(1890,)` float32
-- delta 계산 여부: 현재 미정 — gesture_infer_requirements.docx 참고
+- delta 계산 여부: 현재 미정 — docs/gesture_infer_requirements.docx 참고
 
 ---
 
-## 8. 검증 방법
+## 7. 검증 방법
 
 모델 수령 및 변환 후 아래 순서로 검증:
 
@@ -372,25 +349,25 @@ source Cammand/bin/activate
 cammand
 
 # 4. 확인 포인트
-# - 터미널: "HailoEngine: ... 로드 완료 / 입력: (1, 63) 출력: (1, 5)"
+# - 터미널: "HEF 로드 완료: ... (입력 (1, 63), 출력 (1, 5))"
 # - HA 대시보드: "Cammand NPU Debug" 엔티티에 분류 결과 실시간 갱신
 # - 손가락 수 바꿀 때 클래스 변화 확인
 ```
 
 ---
 
-## 9. 레포지토리
+## 8. 레포지토리
 
 | 레포 | 주소 | 내용 |
 |------|------|------|
 | Core | `github.com/Cammand-2026/Cammand-Core` | SW 전체 (이 문서) |
-| Models | `github.com/Cammand-2026/cammand-models` | `.pt` 파일 및 변환 산출물 관리 |
+| Models | `github.com/Cammand-2026/Command-Model` | `.pt` 파일 및 변환 산출물 관리 |
 
-**AI팀 산출물 전달 위치**: `cammand-models` 레포에 `.pt` 파일 업로드 후 Core팀에 통보.
+**AI팀 산출물 전달 위치**: `Command-Model` 레포에 `.pt` 파일 업로드 후 Core팀에 통보.
 
 ---
 
-## 10. 문의
+## 9. 문의
 
 | 역할 | 이름 | 담당 |
 |------|------|------|

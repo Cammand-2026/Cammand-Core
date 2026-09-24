@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import json
+import logging
 
 import paho.mqtt.client as mqtt
 
 from ..config import settings
 
+logger = logging.getLogger(__name__)
+
 _SENSOR_CONFIG_TOPIC = "homeassistant/sensor/cammand_gesture/config"
 _FEEDBACK_CONFIG_TOPIC = "homeassistant/sensor/cammand_feedback/config"
+_NPU_DEBUG_CONFIG_TOPIC = "homeassistant/sensor/cammand_npu_debug/config"
 _SENSOR_STATE_TOPIC = "cammand/sensor/gesture/state"
 
 _TOPIC_FEEDBACK = "cammand/feedback"
@@ -39,23 +43,29 @@ class MqttPublisher:
     """paho MQTT 래퍼. Home Assistant Auto-Discovery 등록 및 토픽 발행."""
 
     def __init__(self) -> None:
-        self._client = mqtt.Client()
+        self._client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self._client.on_connect = self._on_connect
 
     def connect(self) -> None:
         self._client.connect(settings.mqtt_broker, settings.mqtt_port, 60)
         self._client.loop_start()
 
-    def _on_connect(self, client: mqtt.Client, userdata: object, flags: dict, rc: int) -> None:
-        print(f">> MQTT 연결 성공: rc={rc}")
+    def _on_connect(
+        self,
+        client: mqtt.Client,
+        userdata: object,
+        flags: mqtt.ConnectFlags,
+        reason_code: mqtt.ReasonCode,
+        properties: mqtt.Properties | None,
+    ) -> None:
+        if reason_code.is_failure:
+            logger.error("MQTT 연결 실패: %s", reason_code)
+            return
+        logger.info("MQTT 연결 성공: %s:%d", settings.mqtt_broker, settings.mqtt_port)
         client.publish(_SENSOR_CONFIG_TOPIC, json.dumps(_SENSOR_CONFIG), retain=True)
         client.publish(_FEEDBACK_CONFIG_TOPIC, json.dumps(_FEEDBACK_CONFIG), retain=True)
-        client.publish(
-            "homeassistant/sensor/cammand_npu_debug/config",
-            json.dumps(_NPU_DEBUG_CONFIG),
-            retain=True,
-        )
-        print(">> HA Auto-Discovery 등록 완료")
+        client.publish(_NPU_DEBUG_CONFIG_TOPIC, json.dumps(_NPU_DEBUG_CONFIG), retain=True)
+        logger.info("HA Auto-Discovery 등록 완료")
 
     def publish_feedback(self, text: str) -> None:
         self._client.publish(_TOPIC_FEEDBACK, text)

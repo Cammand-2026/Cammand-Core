@@ -25,16 +25,12 @@ class EngineResult:
     landmarks: HandLandmarks | None  # None이면 hand_detected=False
     raw_frame: np.ndarray
     annotated_frame: np.ndarray
-    npu_debug: str | None = None  # HailoEngine만 채움: "NPU: class=234 (0.82) → THREE"
+    npu_debug: str | None = None  # HailoEngine만 채움: "[NPU] starfish (82.1%) → FIVE"
 
 
 class GestureEngine(ABC):
     """
-    손 랜드마크 추출 엔진 추상 인터페이스.
-
-    구현체:
-      - MediaPipeEngine: CPU 기반, 개발/테스트용
-      - HailoEngine: Hailo-8L NPU 기반, 프로덕션용
+    제스처 엔진 인터페이스 (MediaPipeEngine, HailoEngine).
 
     계약:
       - process()는 항상 EngineResult를 반환 (예외 전파하지 않음)
