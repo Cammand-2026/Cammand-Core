@@ -22,8 +22,8 @@ class CammandSettings(BaseSettings):
 
     # 엔진 선택
     gesture_engine: str = Field(default="mediapipe", pattern="^(mediapipe|hailo)$")
-    hailo_static_hef: str = "models/gesture_static.hef"    # 정적 제스처 (손가락 수)
-    hailo_dynamic_hef: str = "models/gesture_dynamic.hef"  # 동적 제스처 (궤적) — 엔진 연결 전
+    hailo_static_hef: str = "models/gesture_static.hef"
+    hailo_dynamic_hef: str = "models/gesture_dynamic.hef"
 
     # 카메라
     camera_width: int = 640

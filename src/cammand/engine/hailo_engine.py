@@ -1,8 +1,4 @@
-"""
-Hailo-8L NPU 제스처 엔진.
-현재 models/gesture_static.hef (MobileNetV2 stand-in)만 로드. 동적 모델(gesture_dynamic.hef)은 MLP 수령 후 연결.
-MLP .hef 교체 시 _preprocess와 레이블 매핑 교체.
-"""
+"""Hailo-8L NPU 제스처 엔진."""
 from __future__ import annotations
 
 import logging
@@ -22,8 +18,7 @@ _STD  = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 _STATIC_LABELS = ["ONE", "TWO", "THREE", "FOUR", "FIVE"]
 
-# ImageNet 클래스 중 숫자/손과 의미론적으로 연결되는 클래스 오버라이드
-# (MobileNetV2 stand-in 전용 — 실제 MLP 전환 시 삭제)
+# ImageNet 클래스 → 제스처 오버라이드
 _SEMANTIC_OVERRIDES: dict[int, str] = {
     328: "FIVE",  # starfish (팔 5개 — 펼친 손 연상)
     523: "ONE",   # crutch (단일 막대형 — 검지 1개 연상)
