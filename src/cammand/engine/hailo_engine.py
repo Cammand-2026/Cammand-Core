@@ -1,4 +1,3 @@
-"""Hailo-8L NPU 제스처 엔진."""
 from __future__ import annotations
 
 import logging
@@ -12,31 +11,26 @@ from .imagenet_classes import IMAGENET_CLASSES
 
 logger = logging.getLogger(__name__)
 
-# ImageNet 정규화 상수
 _MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 _STD  = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 _STATIC_LABELS = ["ONE", "TWO", "THREE", "FOUR", "FIVE"]
 
-# ImageNet 클래스 → 제스처 오버라이드
 _SEMANTIC_OVERRIDES: dict[int, str] = {
-    328: "FIVE",  # starfish (팔 5개 — 펼친 손 연상)
-    523: "ONE",   # crutch (단일 막대형 — 검지 1개 연상)
-    733: "ONE",   # punching bag (주먹)
-    794: "TWO",   # scissors (날 2개 — V자 제스처)
+    328: "FIVE",
+    523: "ONE",
+    733: "ONE",
+    794: "TWO",
 }
 
 
 def _class_to_gesture(class_id: int) -> str:
-    """ImageNet class_id → ONE~FIVE 매핑 (시맨틱 오버라이드 + 균등 range fallback)."""
     return _SEMANTIC_OVERRIDES.get(class_id, _STATIC_LABELS[min(class_id // 200, 4)])
 
 
 class HailoEngine(GestureEngine):
-    """MediaPipe 랜드마크 추출(CPU) + HEF 추론(NPU)."""
 
     def __init__(self, hef_path: str) -> None:
-        # ── MediaPipe 초기화 (MediaPipeEngine과 동일) ─────────────────────────
         _mp = mp.solutions.hands
         self._mp_hands = _mp
         self._drawing = mp.solutions.drawing_utils
@@ -46,7 +40,6 @@ class HailoEngine(GestureEngine):
             min_tracking_confidence=0.7,
         )
 
-        # ── Hailo VDevice + HEF 로드 ──────────────────────────────────────────
         try:
             from hailo_platform import (  # type: ignore[import]
                 FormatType,
@@ -68,16 +61,14 @@ class HailoEngine(GestureEngine):
         infer_model.input().set_format_type(FormatType.FLOAT32)
         infer_model.output().set_format_type(FormatType.FLOAT32)
 
-        self._input_shape  = tuple(infer_model.input().shape)   # e.g. (224, 224, 3)
-        self._output_shape = tuple(infer_model.output().shape)  # e.g. (1000,)
+        self._input_shape  = tuple(infer_model.input().shape)
+        self._output_shape = tuple(infer_model.output().shape)
         self._input_name   = infer_model.input().name
         self._output_name  = infer_model.output().name
 
-        # configure()는 컨텍스트 매니저 — __enter__ 직접 호출해 수명 관리
         self._configured_ctx = infer_model.configure()
         self._configured = self._configured_ctx.__enter__()
 
-        # 추론 버퍼 사전 할당 (매 프레임 재사용)
         self._in_buf  = np.zeros(self._input_shape,  dtype=np.float32)
         self._out_buf = np.zeros(self._output_shape, dtype=np.float32)
         self._bindings = self._configured.create_bindings(
@@ -89,7 +80,6 @@ class HailoEngine(GestureEngine):
                     hef_path, self._input_shape, self._output_shape)
 
     def _preprocess(self, frame: np.ndarray) -> None:
-        """카메라 프레임 → self._in_buf (ImageNet 전처리, in-place)."""
         h, w = self._input_shape[0], self._input_shape[1]
         resized = cv2.resize(frame, (w, h))
         rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
@@ -97,7 +87,6 @@ class HailoEngine(GestureEngine):
         np.copyto(self._in_buf, normalized)
 
     def process(self, frame: np.ndarray) -> EngineResult:
-        # ── MediaPipe 랜드마크 추출 ───────────────────────────────────────────
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         rgb.flags.writeable = False
         mp_result = self._hands.process(rgb)
@@ -112,14 +101,12 @@ class HailoEngine(GestureEngine):
             )
             landmarks = [Landmark(lm.x, lm.y, lm.z) for lm in hl.landmark]
 
-        # ── Hailo NPU 추론 ────────────────────────────────────────────────────
         self._preprocess(frame)
-        self._configured.run([self._bindings], 1000)  # timeout 1000 ms
+        self._configured.run([self._bindings], 1000)
 
         out = self._bindings.output().get_buffer()
         class_id = int(np.argmax(out))
 
-        # 로짓 → softmax 확률 (overflow 방지)
         probs = np.exp(out - out.max())
         probs /= probs.sum()
         conf = float(probs[class_id]) * 100
