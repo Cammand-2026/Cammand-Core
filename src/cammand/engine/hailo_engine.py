@@ -1,6 +1,7 @@
 """
 Hailo-8L NPU 제스처 엔진.
-현재 mobilenetv2-12.hef stand-in 사용. MLP .hef 교체 시 _preprocess와 레이블 매핑 교체.
+현재 models/gesture_static.hef (MobileNetV2 stand-in)만 로드. 동적 모델(gesture_dynamic.hef)은 MLP 수령 후 연결.
+MLP .hef 교체 시 _preprocess와 레이블 매핑 교체.
 """
 from __future__ import annotations
 

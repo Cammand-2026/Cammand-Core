@@ -27,7 +27,7 @@ def _build_engine() -> GestureEngine:
         return MediaPipeEngine()
     if settings.gesture_engine == "hailo":
         from .engine.hailo_engine import HailoEngine
-        return HailoEngine(settings.hailo_hef_path)
+        return HailoEngine(settings.hailo_static_hef)
     raise ValueError(f"알 수 없는 엔진: {settings.gesture_engine}")
 
 

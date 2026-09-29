@@ -1,7 +1,7 @@
 # Cammand AI 모델팀 인수인계 문서
 
 > **작성일**: 2026-05-08  
-> **최종 수정**: 2026-06-19  
+> **최종 수정**: 2026-09-29  
 > **수신**: AI 모델팀 (제스처 분류 MLP 개발 담당)  
 > **발신**: HW/SW 담당 (백승찬)
 
@@ -127,7 +127,8 @@ def forward(self, x):
 
 ### 3-1. 파이프라인 검증 현황
 
-MobileNetV2 `.hef`를 stand-in으로 사용해 전체 파이프라인을 검증 완료:
+MobileNetV2 `.hef`를 stand-in으로 사용해 전체 파이프라인을 검증 완료.
+현재 `models/gesture_static.hef`, `models/gesture_dynamic.hef` 모두 MobileNetV2 복제본이며, HailoEngine은 `gesture_static.hef`만 로드합니다:
 
 ```
 ✅ Hailo VDevice 초기화
@@ -254,6 +255,8 @@ Cammand/
     └── gesture_dynamic.hef   ← 동적 제스처 모델 (궤적)
 ```
 
+> 현재 두 파일 모두 MobileNetV2 stand-in. 같은 이름의 MLP `.hef`로 덮어쓰면 됩니다.
+
 ### Step 2 — `hailo_engine.py` 수정 (전처리 교체)
 
 현재 `_preprocess()` (MobileNetV2용 이미지 전처리):
@@ -287,12 +290,14 @@ if len(self._frame_buffer) == 30:
     np.copyto(self._in_buf, sequence.reshape(self._input_shape))
 ```
 
-### Step 3 — `config.py` 경로 설정 추가
+### Step 3 — `config.py` 경로 설정 (반영 완료)
 
 ```python
-hailo_static_hef:  str = "models/gesture_static.hef"
-hailo_dynamic_hef: str = "models/gesture_dynamic.hef"
+hailo_static_hef:  str = "models/gesture_static.hef"   # env: HAILO_STATIC_HEF
+hailo_dynamic_hef: str = "models/gesture_dynamic.hef"  # env: HAILO_DYNAMIC_HEF
 ```
+
+> 현재 `main.py`는 `hailo_static_hef`만 HailoEngine에 전달합니다. 동적 모델 수령 시 엔진에 연결 필요.
 
 > 이 3단계 외 나머지 파이프라인 코드(main.py, state machine, MQTT 등)는 **변경 없음**.
 
@@ -341,7 +346,8 @@ hailo_dynamic_hef: str = "models/gesture_dynamic.hef"
 
 # 2. .env 수정
 GESTURE_ENGINE=hailo
-HAILO_HEF_PATH=models/gesture_static.hef  # 또는 dynamic
+HAILO_STATIC_HEF=models/gesture_static.hef
+HAILO_DYNAMIC_HEF=models/gesture_dynamic.hef
 
 # 3. 실행
 cd /home/rpi5/Cammand

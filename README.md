@@ -36,7 +36,7 @@ src/cammand/
 ├── state/     # 상태 머신
 └── io/        # 카메라, MQTT, MJPEG 스트리밍
 docs/          # AI 모델팀 문서
-models/        # .hef 모델 (Cammand-2026/Command-Model)
+models/        # gesture_static.hef, gesture_dynamic.hef (Cammand-2026/Command-Model)
 ```
 
 ---
