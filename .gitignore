@@ -22,3 +22,6 @@ Cammand/
 
 # 로그
 *.log
+
+# Claude Code
+CLAUDE.md
